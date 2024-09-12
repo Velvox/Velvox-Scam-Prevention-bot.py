@@ -1,9 +1,10 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import pymysql
 import config
 import re
 import aiohttp
+import itertools
 
 # Create bot instance with intents
 intents = discord.Intents.default()
@@ -13,6 +14,15 @@ intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 db_config = config.db_config
+
+# List of bot activities
+activities = itertools.cycle([
+    discord.Activity(type=discord.ActivityType.watching, name="for URL shortners..."),
+    discord.Activity(type=discord.ActivityType.competing, name="anti phishing"),
+    discord.Activity(type=discord.ActivityType.watching, name="for hacked accounts"),
+    discord.Activity(type=discord.ActivityType.playing, name="with VirusTotal data"),
+])
+
 
 # Function to load DM user permissions from the database
 def load_dmuser_permissions():
@@ -83,10 +93,17 @@ async def check_server_status(invite_code):
         except Exception as e:
             print(f"Error checking server status: {e}")
             return False
+        
+# Function to change bot activity every 5 seconds
+@tasks.loop(seconds=5)
+async def change_activity():
+    current_activity = next(activities)
+    await bot.change_presence(activity=current_activity)
  
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user}')
+    change_activity.start()  # Start the loop when the bot is ready
     # Sync slash commands with Discord
     await bot.tree.sync()
     print('Slash commands synchronized with Discord.')
