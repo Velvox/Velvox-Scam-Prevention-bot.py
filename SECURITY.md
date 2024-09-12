@@ -1,0 +1,70 @@
+# Security Policy for Velvox
+
+## 1. Introduction
+We take the security of our bot seriously. If you discover any security vulnerabilities, we encourage you to report them to us so we can fix them quickly.
+
+## 2. How to Report a Vulnerability
+To report a vulnerability, please:
+1. **Keep it private**: Do not share the vulnerability publicly until we have fixed it.
+2. **Provide details**: Include a clear description, steps to reproduce, and any proof of the issue.
+3. **Use our PGP key**: Encrypt your report using the following PGP key for security:
+
+```
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+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
+=flpd
+-----END PGP PUBLIC KEY BLOCK-----
+
+```
+
+### Send your report to: support@velvox.net  
+Make sure the subject is "VSP Security Report."
+
+## 3. Our Response
+We’ll respond to your report within 48 hours and aim to fix any valid issues as soon as possible.
