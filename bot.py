@@ -5,6 +5,7 @@ import config
 import re
 import aiohttp
 import itertools
+import hashlib
 
 # Create bot instance with intents
 intents = discord.Intents.default()
@@ -94,6 +95,16 @@ async def check_server_status(invite_code):
             print(f"Error checking server status: {e}")
             return False
         
+# Function to download file and calculate hash (in memory)
+async def download_file_and_hash(attachment_url):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(attachment_url) as resp:
+            if resp.status == 200:
+                file_data = await resp.read()  # Keep file data in memory
+                sha256_hash = hashlib.sha256(file_data).hexdigest()  # Hash the in-memory file
+                return sha256_hash
+    return None
+        
 # Function to change bot activity every 5 seconds
 @tasks.loop(seconds=5)
 async def change_activity():
@@ -123,7 +134,8 @@ SHORTENERS = [
 SUSPICIOUS_EXTENSIONS = [
     ".exe", ".msi", ".dmg", ".pkg", ".deb", ".rpm", ".apk",
     ".bat", ".vbs", ".ps1", ".cmd", ".js", ".scr", ".pl", ".py",
-    ".sh", ".command", ".applescript", ".cgi", ".jar", ".rb"
+    ".sh", ".command", ".applescript", ".cgi", ".jar", ".rb",
+    ".com"
 ]
 
 @bot.event
@@ -240,11 +252,27 @@ async def on_message(message):
             )
             embed.add_field(
                 name="Don't download random files!",
-                value="Ensure you know and trust the person that sends this file, don't download random or strange programs from Discord. And **NEVER** turn off your anti-virus/malware protection!",
+                value="Ensure you know and trust the person that sends this file. Don't download random or strange programs from Discord, and **NEVER** turn off your anti-virus/malware protection!",
                 inline=False
             )
             embed.set_footer(text="Built, hosted, and maintained by Velvox. This is an open-source project.")
 
+            # Download the file and calculate its hash (in-memory)
+            file_hash = await download_file_and_hash(attachment.url)
+            if file_hash:
+                virus_total_url = f"https://www.virustotal.com/gui/file/{file_hash}/detection"
+                embed.add_field(
+                    name="Check if the file is malicious with VirusTotal",
+                    value=f"[Check **{file_name}** on VirusTotal]({virus_total_url})",
+                    inline=False
+                )
+            embed.add_field(
+                name="Analyze the file further with Triage",
+                value=f"Still not shure if it safe? Go to https://tria.ge and login to upload the file by link.",
+                inline=False
+            )
+
+            # Send the embed
             try:
                 await message.channel.send(embed=embed)
             except discord.errors.Forbidden:
