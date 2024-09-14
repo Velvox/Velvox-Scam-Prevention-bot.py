@@ -6,6 +6,7 @@ import re
 import aiohttp
 import itertools
 import hashlib
+from urllib.parse import urlparse
 
 # Create bot instance with intents
 intents = discord.Intents.default()
@@ -22,6 +23,12 @@ activities = itertools.cycle([
     discord.Activity(type=discord.ActivityType.competing, name="anti phishing"),
     discord.Activity(type=discord.ActivityType.watching, name="for hacked accounts"),
     discord.Activity(type=discord.ActivityType.playing, name="with VirusTotal data"),
+    discord.Activity(type=discord.ActivityType.watching, name="Tria.ge analasys"),
+    discord.Activity(type=discord.ActivityType.competing, name="SHA256 generation"),
+    discord.Activity(type=discord.ActivityType.watching, name="URLs for threats"),
+    discord.Activity(type=discord.ActivityType.watching, name="phishing attempts unfold"),
+    discord.Activity(type=discord.ActivityType.watching, name="malicious invite links"),
+    discord.Activity(type=discord.ActivityType.playing, name="with API data")
 ])
 
 
@@ -50,9 +57,16 @@ def check_for_scam(message_content, signatures):
             return True
     return False
 
+# Function to extract the domain
+def extract_domain(url):
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc.lower()
+    return domain.split('.')[-2] + '.' + domain.split('.')[-1]
+
 # Function to check if the URL is shortened
 def is_shortened_url(url):
-    return any(shortener in url for shortener in SHORTENERS)
+    domain = extract_domain(url)
+    return domain in SHORTENERS
 
 # Function to expand shortened URLs
 async def expand_url(shortened_url):
@@ -65,13 +79,10 @@ async def expand_url(shortened_url):
             print(f"Error expanding shortened URL: {e}")
             return str(shortened_url)  # Fallback to original if an error occurs
 
-# Function to extract the domain from a URL
-def extract_domain(url):
-    """Function to extract the domain from a URL."""
-    domain_match = re.match(r"https?://([^/]+)", url)
-    if domain_match:
-        return domain_match.group(1)
-    return None
+# Function to check if the URL is shortened
+def is_shortened_url(url):
+    domain = extract_domain(url)
+    return domain in SHORTENERS
 
 # Function to check if a server is flagged as NSFW/malicious
 async def check_server_status(invite_code):
@@ -138,6 +149,9 @@ SUSPICIOUS_EXTENSIONS = [
     ".com"
 ]
 
+# Set max file upload size for the /check file command
+CHECK_FILE_MAX_FILE_SIZE = 500 * 1024 * 1024  
+
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -146,6 +160,7 @@ async def on_message(message):
     # Load necessary data
     signatures = load_signatures()
     authorized_user_ids = load_dmuser_permissions()
+    safe_message = True  # Assume message is safe initially
 
     # Check for scams
     if check_for_scam(message.content, signatures):
@@ -160,7 +175,7 @@ async def on_message(message):
         )
         scam_info_embed.add_field(
             name="Common Scam Types",
-            value='1. Phishing\n2. Fake Giveaways \n3. "Sorry I reported you" (Often used to phish for login info)\n4. Discord staff impersonation scams'
+            value='1. Phishing\n2. Fake Giveaways\n3. "Sorry I reported you" (Often used to phish for login info)\n4. Discord staff impersonation scams'
         )
         scam_info_embed.add_field(
             name="Have you been scammed or phished?",
@@ -229,6 +244,7 @@ async def on_message(message):
                 await message.channel.send(embed=embed)
             except discord.errors.Forbidden:
                 print("Couldn't send message in the channel, the bot might not have the right permissions.")
+            safe_message = False  # Mark message as unsafe for deletion
             break
 
     # Check for suspicious file attachments
@@ -266,11 +282,17 @@ async def on_message(message):
                     value=f"[Check **{file_name}** on VirusTotal]({virus_total_url})",
                     inline=False
                 )
-            embed.add_field(
-                name="Analyze the file further with Triage",
-                value=f"Still not shure if it safe? Go to https://tria.ge and login to upload the file by link.",
-                inline=False
-            )
+                tria_ge_url = f"https://tria.ge/s?q={file_hash}"
+                embed.add_field(
+                    name="Analyze the file further with Triage",
+                    value=f"[Check **{file_name}** on Tria.ge]({tria_ge_url})",
+                    inline=False
+                )
+                embed.add_field(
+                    name="SHA256 hash of file",
+                    value=f"`{file_hash}`",
+                    inline=False
+                )
 
             # Send the embed
             try:
@@ -278,7 +300,7 @@ async def on_message(message):
             except discord.errors.Forbidden:
                 print("Couldn't send message in the channel, the bot might not have the right permissions.")
 
-            # Break after processing the first invite link found
+            safe_message = False  # Mark message as unsafe for deletion
             break
 
     # Check for malicious or NSFW server
@@ -303,8 +325,8 @@ async def on_message(message):
                                     
                                     await message.channel.send(
                                         embed=discord.Embed(
-                                            title="❗Malicous NSFW server link detected!❗",
-                                            description="This server join link has been flagged as potentially malicious based on our records and the Discord API check. Please exercise caution.\n\nThese servers are often used to harvers user credentials or other with malicious intent.",
+                                            title="❗Malicious NSFW server link detected!❗",
+                                            description="This server join link has been flagged as potentially malicious based on our records and the Discord API check. Please exercise caution.\n\nThese servers are often used to harvest user credentials or other data with malicious intent.",
                                             color=discord.Color.red()
                                         ).add_field(
                                             name="Description",
@@ -316,8 +338,17 @@ async def on_message(message):
                                             inline=False
                                         ).set_footer(text="Built, hosted, and maintained by Velvox. This is an open-source project.")
                                     )
+                                    safe_message = False  # Mark message as unsafe for deletion
             except Exception as e:
                 print(f"Error checking invite link: {e}")
+
+    # If the message is flagged as unsafe, delete it
+    if not safe_message:
+        try:
+            await message.delete()
+            print(f"Deleted message from {message.author} in {message.channel}.")
+        except discord.errors.Forbidden:
+            print("Couldn't delete the message, the bot might not have the right permissions.")
 
     # Ensure bot continues processing commands even if deletion fails
     await bot.process_commands(message)
@@ -361,7 +392,7 @@ async def allowdmwarning(interaction: discord.Interaction):
 async def whatisascam(interaction: discord.Interaction):
     scam_info_embed = discord.Embed(
         title="So what is a scam?",
-        description="A scam is an attempt to trick people into giving away their login  or personal information or even money. Scammers often use deception and manipulation to exploit individuals. Here are some common types of scams:",
+        description="A scam is an attempt to trick people into giving away their login or personal information or even money. Scammers often use deception and manipulation to exploit individuals. Here are some common types of scams:",
         color=discord.Color.blue()
     )
     scam_info_embed.add_field(
@@ -382,6 +413,7 @@ async def whatisascam(interaction: discord.Interaction):
     scam_info_embed.set_footer(text="Build, hosted and maintained by Velvox. This is an opensource project.")
     
     await interaction.response.send_message(embed=scam_info_embed, ephemeral=True)
+
 # /igotscammed command
 @bot.tree.command(name="igotscammed", description="Explains what a scam is")
 async def igotscammed(interaction: discord.Interaction):
@@ -500,6 +532,66 @@ async def report_bot(interaction: discord.Interaction, botid: str, reason: str, 
     connection.close()
 
     await interaction.response.send_message(f"Bot {botid} has been reported.", ephemeral=True)
+
+# Define the /checkfile command
+@bot.tree.command(name="checkfile", description="Upload a file to check its hash and analyze it! (Max 500MB)")
+async def checkfile(interaction: discord.Interaction, file: discord.Attachment):
+    # Check file size (limit to 500MB)
+    if file.size > 500 * 1024 * 1024:
+        await interaction.response.send_message(
+            "File is too large. Please upload a file smaller than 500MB.",
+            ephemeral=True
+        )
+        return
+
+    # Download file as bytes (in memory)
+    file_bytes = await file.read()
+
+    # Generate SHA256 hash of the file (still in memory)
+    sha256_hash = hashlib.sha256(file_bytes).hexdigest()
+
+    # Create URLs for VirusTotal and Tria.ge
+    virustotal_url = f"https://www.virustotal.com/gui/file/{sha256_hash}"
+    triage_url = f"https://tria.ge/s?q={sha256_hash}"
+
+    # Create embed response
+    embed = discord.Embed(
+        title="File Check Result",
+        description=f"SHA256 hash of the uploaded file: `{sha256_hash}`",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="VirusTotal Link", value=f"[Check on VirusTotal]({virustotal_url})", inline=False)
+    embed.add_field(name="Triage Link", value=f"[Check on Tria.ge]({triage_url})", inline=False)
+
+    # Send embed with results
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="messagedelete", description="Toggle message delete feature for this server")
+async def messagedelete(interaction: discord.Interaction):
+    # Fetch the current value for the guild_id
+    guild_id = str(interaction.guild.id)
+    connection = pymysql.connect(**db_config)  # Use the dictionary directly here
+
+    try:
+        with connection.cursor() as cursor:
+            # Check current status
+            cursor.execute("SELECT status FROM message_delete WHERE guild_id = %s", (guild_id,))
+            result = cursor.fetchone()
+
+            if result:
+                current_value = result['status']
+                new_value = '0' if current_value == '1' else '1'
+                cursor.execute("UPDATE message_delete SET status = %s WHERE guild_id = %s", (new_value, guild_id))
+                message = "Message delete feature is now enabled." if new_value == '1' else "Message delete feature is now disabled."
+            else:
+                cursor.execute("INSERT INTO message_delete (guild_id, status) VALUES (%s, '1')", (guild_id,))
+                message = "Message delete feature is now enabled."
+
+            connection.commit()
+    finally:
+        connection.close()
+
+    await interaction.response.send_message(message, ephemeral=True)
 
 # Run the bot
 bot.run(config.BOT_TOKEN)
