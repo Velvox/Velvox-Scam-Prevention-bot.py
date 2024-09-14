@@ -11,7 +11,11 @@ Velvox Scam Prevention Bot is a powerful Discord bot designed to protect your se
 
 ## Bot Setup
 
-### Using Velvox Gamehosting
+### Without hosting it your self
+Invite the bot https://discord.com/oauth2/authorize?client_id=1281627516485767281 and select the server you want the bot to be in!
+
+
+### Hosting the bot your self using Velvox Gamehosting
 
 #### 1. **Download the Bot Package**
 
