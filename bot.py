@@ -146,7 +146,7 @@ SUSPICIOUS_EXTENSIONS = [
     ".exe", ".msi", ".dmg", ".pkg", ".deb", ".rpm", ".apk",
     ".bat", ".vbs", ".ps1", ".cmd", ".js", ".scr", ".pl", ".py",
     ".sh", ".command", ".applescript", ".cgi", ".jar", ".rb",
-    ".com"
+    ".com", ".iso", ".rar", ".tar", ".zip", ".7z"
 ]
 
 # Set max file upload size for the /check file command
@@ -293,6 +293,7 @@ async def on_message(message):
                     value=f"`{file_hash}`",
                     inline=False
                 )
+                
 
             # Send the embed
             try:
@@ -304,8 +305,28 @@ async def on_message(message):
             break
 
     # Check for malicious or NSFW server
-    invite_urls = re.findall(r'https://discord(?:\.com|app\.com)/invite/([a-zA-Z0-9_-]+)', message.content)
-    for invite_code in invite_urls:
+    # Regex for URLs with /invite/
+    invite_urls_with_invite = re.findall(
+        r'https://discord(?:\.com|\.gg|\.app\.com)/invite/([a-zA-Z0-9_-]+)',
+        message.content
+    )
+
+    # Regex for URLs without /invite/ (direct short links)
+    invite_urls_without_invite = re.findall(
+        r'https://discord(?:\.com|\.gg|\.app\.com)/([a-zA-Z0-9_-]+)',
+        message.content
+    )
+    
+    # Regex for URL's with 
+    invite_url_discord_embedded = re.findall(
+    	r'(discord\.gg)/([a-zA-Z0-9_-]+)',
+        message.content
+    )
+
+    # Combine both results into a single list
+    invite_codes = invite_urls_with_invite + invite_urls_without_invite + [code[1] for code in invite_url_discord_embedded]
+    
+    for invite_code in invite_codes:
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(f"https://discord.com/api/v10/invites/{invite_code}") as response:
@@ -325,7 +346,7 @@ async def on_message(message):
                                     
                                     await message.channel.send(
                                         embed=discord.Embed(
-                                            title="❗Malicious NSFW server link detected!❗",
+                                            title="❗Malicious server link detected!❗",
                                             description="This server join link has been flagged as potentially malicious based on our records and the Discord API check. Please exercise caution.\n\nThese servers are often used to harvest user credentials or other data with malicious intent.",
                                             color=discord.Color.red()
                                         ).add_field(
@@ -335,6 +356,10 @@ async def on_message(message):
                                         ).add_field(
                                             name="Server ID",
                                             value=guild_id,
+                                            inline=False
+                                         ).add_field(
+                                            name="Report false hit",
+                                            value="If this embed is placed on the wrong invite URL report it to us! [Report it in a Github issue](https://github.com/Velvox/Velvox-Scam-Prevention-bot.py/issues/new)",
                                             inline=False
                                         ).set_footer(text="Built, hosted, and maintained by Velvox. This is an open-source project.")
                                     )
@@ -413,6 +438,7 @@ async def whatisascam(interaction: discord.Interaction):
     scam_info_embed.set_footer(text="Build, hosted and maintained by Velvox. This is an opensource project.")
     
     await interaction.response.send_message(embed=scam_info_embed, ephemeral=True)
+    
 
 # /igotscammed command
 @bot.tree.command(name="igotscammed", description="Explains what a scam is")
@@ -446,22 +472,22 @@ async def igotscammed(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=igotscammed_embed, ephemeral=True)
 
-@bot.tree.command(name="vtdcheck", description="Use the VirusTotal Domain check to check for malicious domains")
+@bot.tree.command(name="vtdcheck", description="Check a domain using VirusTotal")
 async def vtdcheck(interaction: discord.Interaction, domain: str):
-    # Create the embed with VirusTotal information
+    # Construct the VirusTotal link
+    vt_link = f"https://www.virustotal.com/gui/domain/{domain}"
+
+    # Create an embed
     embed = discord.Embed(
         title="VirusTotal Domain Check",
-        description=f"VirusTotal is a service that analyzes files and URLs to detect malware and other kinds of malicious content. You can use it to check the reputation of a domain or URL.",
+        description=f"[Click here to check {domain} on VirusTotal]({vt_link})",
         color=discord.Color.blue()
     )
-    embed.add_field(
-        name="<:vtlogo:1281911851793514536> Check the Domain/URL with VirusTotal",
-        value=f"[Click here to check **{domain}** on VirusTotal](https://www.virustotal.com/gui/domain/{domain})",
-        inline=False
-    )
-    embed.set_footer(text="Build, hosted and maintained by Velvox. This is an opensource project.")
-    # Send the embed as a response
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    embed.set_footer(text="Use this link to analyze the domain for any threats.")
+
+    # Send the embed
+    await interaction.response.send_message(embed=embed)
+
 
 # /reporthelp command
 @bot.tree.command(name="reporthelp", description="Report commands and help.")
@@ -567,6 +593,7 @@ async def checkfile(interaction: discord.Interaction, file: discord.Attachment):
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="messagedelete", description="Toggle message delete feature for this server")
+@commands.has_permissions(administrator=True)
 async def messagedelete(interaction: discord.Interaction):
     # Fetch the current value for the guild_id
     guild_id = str(interaction.guild.id)
@@ -582,16 +609,36 @@ async def messagedelete(interaction: discord.Interaction):
                 current_value = result['status']
                 new_value = '0' if current_value == '1' else '1'
                 cursor.execute("UPDATE message_delete SET status = %s WHERE guild_id = %s", (new_value, guild_id))
-                message = "Message delete feature is now enabled." if new_value == '1' else "Message delete feature is now disabled."
+                message = "Message delete feature is now enabled. (You may need to change the bot permissions due to it being very little to enhance enduser privacy)" if new_value == '1' else "Message delete feature is now disabled. (Consider restricting the bot permissions to the default to enhance user privacy)"
             else:
                 cursor.execute("INSERT INTO message_delete (guild_id, status) VALUES (%s, '1')", (guild_id,))
-                message = "Message delete feature is now enabled."
+                message = "Message delete feature is now enabled. (You may need to change the bot permissions due to it being very little to enhance enduser privacy)"
 
             connection.commit()
     finally:
         connection.close()
 
     await interaction.response.send_message(message, ephemeral=True)
+
+# Define the botinfo command
+@bot.tree.command(name='botinfo', description='Get information about the bot.')
+async def botinfo(interaction: discord.Interaction):
+    # Create an embed object
+    embed = discord.Embed(
+        title="Bot Information",
+        description=(
+            "Hello! I am the Velvox Scam Prevention Bot (VSPB), I protect users against scams and phishing attempts.\n You can set if you personaly want a DM if a scam is detected by sending `/allowdmwarning` in this channel.\n\n To report a server you can send `/reporthelp` and you will get extra info about reporting a malicouis bot or server.\n\n You can use `/vtdcheck` to check a domain for know malicouis signatures! Or use /checkfile to upload a file and get the hash to check it at VirusTotal or other vendor's!"
+        ),
+        color=discord.Color.blue()  # You can customize the color
+    )
+    
+    embed.add_field(
+        name="<:velvox:1250723798559232101> Hosted at Velvox Gamehosting",
+        value="This bot is hosted and maintained by [Velvox](https://velvox.net)"
+    )
+
+    # Send the embed message
+    await interaction.response.send_message(embed=embed)
 
 # Run the bot
 bot.run(config.BOT_TOKEN)
