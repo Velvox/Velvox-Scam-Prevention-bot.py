@@ -108,9 +108,6 @@ async def check_server_status(invite_code):
             return False
         
 # Function to download file and calculate hash (in memory)
-import hashlib
-import aiohttp
-
 async def download_file_and_hash(attachment_url):
     async with aiohttp.ClientSession() as session:
         async with session.get(attachment_url) as resp:
