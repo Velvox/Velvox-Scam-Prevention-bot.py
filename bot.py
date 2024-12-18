@@ -25,6 +25,7 @@ activities = itertools.cycle([
     discord.Activity(type=discord.ActivityType.playing, name="with VirusTotal data"),
     discord.Activity(type=discord.ActivityType.watching, name="Tria.ge analasys"),
     discord.Activity(type=discord.ActivityType.competing, name="SHA256 generation"),
+    discord.Activity(type=discord.ActivityType.watching, name="Hashes at Malware Bazaar"),
     discord.Activity(type=discord.ActivityType.watching, name="URLs for threats"),
     discord.Activity(type=discord.ActivityType.watching, name="phishing attempts unfold"),
     discord.Activity(type=discord.ActivityType.watching, name="malicious invite links"),
@@ -84,7 +85,7 @@ def is_shortened_url(url):
     domain = extract_domain(url)
     return domain in SHORTENERS
 
-# Function to check if a server is flagged as NSFW/malicious
+# Function to check if a server is flagged as malicious in database
 async def check_server_status(invite_code):
     async with aiohttp.ClientSession() as session:
         try:
@@ -107,14 +108,27 @@ async def check_server_status(invite_code):
             return False
         
 # Function to download file and calculate hash (in memory)
+import hashlib
+import aiohttp
+
 async def download_file_and_hash(attachment_url):
     async with aiohttp.ClientSession() as session:
         async with session.get(attachment_url) as resp:
             if resp.status == 200:
                 file_data = await resp.read()  # Keep file data in memory
-                sha256_hash = hashlib.sha256(file_data).hexdigest()  # Hash the in-memory file
-                return sha256_hash
+                
+                # Compute hashes
+                sha256_hash = hashlib.sha256(file_data).hexdigest()
+                sha384_hash = hashlib.sha384(file_data).hexdigest()
+                sha512_hash = hashlib.sha512(file_data).hexdigest()
+                
+                return {
+                    "sha256": sha256_hash,
+                    "sha384": sha384_hash,
+                    "sha512": sha512_hash,
+                }
     return None
+
         
 # Function to change bot activity every 5 seconds
 @tasks.loop(seconds=5)
@@ -146,7 +160,7 @@ SUSPICIOUS_EXTENSIONS = [
     ".exe", ".msi", ".dmg", ".pkg", ".deb", ".rpm", ".apk",
     ".bat", ".vbs", ".ps1", ".cmd", ".js", ".scr", ".pl", ".py",
     ".sh", ".command", ".applescript", ".cgi", ".jar", ".rb",
-    ".com", ".iso", ".rar", ".tar", ".zip", ".7z"
+    ".com", ".iso", ".rar", ".tar", ".zip", ".7z", ".gz"
 ]
 
 # Set max file upload size for the /check file command
@@ -273,27 +287,33 @@ async def on_message(message):
             )
             embed.set_footer(text="Built, hosted, and maintained by Velvox. This is an open-source project.")
 
-            # Download the file and calculate its hash (in-memory)
-            file_hash = await download_file_and_hash(attachment.url)
-            if file_hash:
-                virus_total_url = f"https://www.virustotal.com/gui/file/{file_hash}/detection"
+            # Download the file and calculate its hashes (in-memory)
+            file_hashes = await download_file_and_hash(attachment.url)
+            if file_hashes:
+                virus_total_url = f"https://www.virustotal.com/gui/file/{file_hashes['sha256']}/detection"
+                tria_ge_url = f"https://tria.ge/s?q={file_hashes['sha256']}"
+                malware_bazaar_url = f"https://bazaar.abuse.ch/sample/{file_hashes['sha256']}"
+                
                 embed.add_field(
                     name="Check if the file is malicious with VirusTotal",
                     value=f"[Check **{file_name}** on VirusTotal]({virus_total_url})",
                     inline=False
                 )
-                tria_ge_url = f"https://tria.ge/s?q={file_hash}"
                 embed.add_field(
                     name="Analyze the file further with Triage",
                     value=f"[Check **{file_name}** on Tria.ge]({tria_ge_url})",
                     inline=False
                 )
                 embed.add_field(
-                    name="SHA256 hash of file",
-                    value=f"`{file_hash}`",
+                    name="Check if the file is known at abuse.ch",
+                    value=f"[Check **{file_name}** on the MALWARE Bazaar]({malware_bazaar_url})",
                     inline=False
                 )
-                
+                embed.add_field(
+                    name="Hashes of file",
+                    value=f"**SHA256:**`\n{file_hashes['sha256']}`\n**SHA384:**`\n{file_hashes['sha384']}`\n**SHA512:**\n`{file_hashes['sha512']}`",
+                    inline=False
+                )            
 
             # Send the embed
             try:
@@ -305,28 +325,8 @@ async def on_message(message):
             break
 
     # Check for malicious or NSFW server
-    # Regex for URLs with /invite/
-    invite_urls_with_invite = re.findall(
-        r'https://discord(?:\.com|\.gg|\.app\.com)/invite/([a-zA-Z0-9_-]+)',
-        message.content
-    )
-
-    # Regex for URLs without /invite/ (direct short links)
-    invite_urls_without_invite = re.findall(
-        r'https://discord(?:\.com|\.gg|\.app\.com)/([a-zA-Z0-9_-]+)',
-        message.content
-    )
-    
-    # Regex for URL's with 
-    invite_url_discord_embedded = re.findall(
-    	r'(discord\.gg)/([a-zA-Z0-9_-]+)',
-        message.content
-    )
-
-    # Combine both results into a single list
-    invite_codes = invite_urls_with_invite + invite_urls_without_invite + [code[1] for code in invite_url_discord_embedded]
-    
-    for invite_code in invite_codes:
+    invite_urls = re.findall(r'https://discord(?:\.com|app\.com)/invite/([a-zA-Z0-9_-]+)', message.content)
+    for invite_code in invite_urls:
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(f"https://discord.com/api/v10/invites/{invite_code}") as response:
@@ -346,7 +346,7 @@ async def on_message(message):
                                     
                                     await message.channel.send(
                                         embed=discord.Embed(
-                                            title="❗Malicious server link detected!❗",
+                                            title="❗Malicious NSFW server link detected!❗",
                                             description="This server join link has been flagged as potentially malicious based on our records and the Discord API check. Please exercise caution.\n\nThese servers are often used to harvest user credentials or other data with malicious intent.",
                                             color=discord.Color.red()
                                         ).add_field(
@@ -356,10 +356,6 @@ async def on_message(message):
                                         ).add_field(
                                             name="Server ID",
                                             value=guild_id,
-                                            inline=False
-                                         ).add_field(
-                                            name="Report false hit",
-                                            value="If this embed is placed on the wrong invite URL report it to us! [Report it in a Github issue](https://github.com/Velvox/Velvox-Scam-Prevention-bot.py/issues/new)",
                                             inline=False
                                         ).set_footer(text="Built, hosted, and maintained by Velvox. This is an open-source project.")
                                     )
@@ -435,10 +431,14 @@ async def whatisascam(interaction: discord.Interaction):
         value="Did you download a strange file? Or logged in on a website that looks real? run the command `/igotscammed` to get info and sources to get your account back an protect you in the future.",
         inline=True
     )
+    scam_info_embed.add_field(
+        name="Additional info",
+        value="For over 70 video's of insights and explanation check-out the Youtuber **No Text To Speech** Youtube playlist:\nhttps://youtube.com/playlist?list=PLEqYobHF0_Nk50vPzBKZFdcYHMzEyhuU3&si=BFjWRvi1Yw1DosEA",
+        inline=False
+    )
     scam_info_embed.set_footer(text="Build, hosted and maintained by Velvox. This is an opensource project.")
     
     await interaction.response.send_message(embed=scam_info_embed, ephemeral=True)
-    
 
 # /igotscammed command
 @bot.tree.command(name="igotscammed", description="Explains what a scam is")
@@ -574,20 +574,22 @@ async def checkfile(interaction: discord.Interaction, file: discord.Attachment):
     file_bytes = await file.read()
 
     # Generate SHA256 hash of the file (still in memory)
-    sha256_hash = hashlib.sha256(file_bytes).hexdigest()
+    sha256 = hashlib.sha256(file_bytes).hexdigest()
 
     # Create URLs for VirusTotal and Tria.ge
-    virustotal_url = f"https://www.virustotal.com/gui/file/{sha256_hash}"
-    triage_url = f"https://tria.ge/s?q={sha256_hash}"
+    virustotal_url = f"https://www.virustotal.com/gui/file/{sha256}"
+    triage_url = f"https://tria.ge/s?q={sha256}"
+    malware_bazaar_url = f"https://bazaar.abuse.ch/sample/{sha256}"
 
     # Create embed response
     embed = discord.Embed(
         title="File Check Result",
-        description=f"SHA256 hash of the uploaded file: `{sha256_hash}`",
+        description=f"SHA256 hash of the uploaded file: `{sha256}`",
         color=discord.Color.blue()
     )
     embed.add_field(name="VirusTotal Link", value=f"[Check on VirusTotal]({virustotal_url})", inline=False)
     embed.add_field(name="Triage Link", value=f"[Check on Tria.ge]({triage_url})", inline=False)
+    embed.add_field(name="Malware Bazaar Link", value=f"[Check on Malware Bazaar]({malware_bazaar_url})", inline=False)
 
     # Send embed with results
     await interaction.response.send_message(embed=embed)
@@ -609,10 +611,10 @@ async def messagedelete(interaction: discord.Interaction):
                 current_value = result['status']
                 new_value = '0' if current_value == '1' else '1'
                 cursor.execute("UPDATE message_delete SET status = %s WHERE guild_id = %s", (new_value, guild_id))
-                message = "Message delete feature is now enabled. (You may need to change the bot permissions due to it being very little to enhance enduser privacy)" if new_value == '1' else "Message delete feature is now disabled. (Consider restricting the bot permissions to the default to enhance user privacy)"
+                message = "Message delete feature is now enabled." if new_value == '1' else "Message delete feature is now disabled."
             else:
                 cursor.execute("INSERT INTO message_delete (guild_id, status) VALUES (%s, '1')", (guild_id,))
-                message = "Message delete feature is now enabled. (You may need to change the bot permissions due to it being very little to enhance enduser privacy)"
+                message = "Message delete feature is now enabled."
 
             connection.commit()
     finally:
