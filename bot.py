@@ -6,6 +6,7 @@ import re
 import aiohttp
 import itertools
 import hashlib
+import socket
 from urllib.parse import urlparse
 
 # Create bot instance with intents
@@ -485,6 +486,72 @@ async def vtdcheck(interaction: discord.Interaction, domain: str):
     # Send the embed
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(name="domaincheck", description="Check a domain name for its security practices")
+async def domaincheck(interaction: discord.Interaction, domain: str):
+    try:
+        # Resolve IP address
+        ip_address = socket.gethostbyname(domain)
+    except socket.gaierror:
+        await interaction.response.send_message(
+            content=f"Could not resolve the domain: **{domain}**. Please check the domain name.",
+            ephemeral=True
+        )
+        return
+
+    # API to fetch hosting provider and country data
+    hosting_provider = "Unknown"  # Default value if no provider info is found
+    country_flag = ""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"https://ipinfo.io/{ip_address}/json") as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                hosting_provider = data.get("org", "Unknown")
+                country_code = data.get("country", "").lower()  # Get country code and convert to lowercase
+                if country_code:
+                    country_flag = f":flag_{country_code}:"
+
+    # Build the URLs
+    security_headers_url = f"https://securityheaders.com/?q={domain}&followRedirects=on"
+    ssl_labs_url = f"https://www.ssllabs.com/ssltest/analyze.html?d={domain}"
+    easydmarc_url = f"https://easydmarc.com/tools/domain-scanner?domain={domain}"
+
+    # Create the embed
+    embed = discord.Embed(
+        title="Domain Security Check",
+        description=f"Here are some insights and tools for the domain **{domain}**:",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="Resolved IPv4 Address",
+        value=f"`{ip_address}` [Check for open ports?](https://dnschecker.org/port-scanner.php)",
+        inline=True
+    )
+    embed.add_field(
+        name="Hosting Provider",
+        value=f"{country_flag} `{hosting_provider}`" if country_flag else f"`{hosting_provider}`",
+        inline=True
+    )
+    embed.add_field(
+        name="Security Headers",
+        value=f"[Analyze **{domain}** on SecurityHeaders.com]({security_headers_url})\n__*What are security headers?*__\nSecurity headers are HTTP response headers that protect web applications by enforcing security policies, mitigating vulnerabilities like XSS, clickjacking, and content sniffing.",
+        inline=False
+    )
+    embed.add_field(
+        name="SSL Labs",
+        value=f"[Analyze **{domain}** on SSL Labs]({ssl_labs_url})\n__*What does SSL/TLS do?*__\nSSL/TLS are cryptographic protocols that secure communication over the internet by encrypting data and ensuring its integrity and authenticity.",
+        inline=False
+    )
+    embed.add_field(
+        name="EasyDMARC",
+        value=f"[Check DMARC records for **{domain}** on EasyDMARC]({easydmarc_url})\n__*What is DMARC?*__\nDMARC, SPF, and DKIM are email authentication protocols that help prevent email spoofing and phishing by verifying sender authenticity, ensuring emails are from trusted sources, and protecting against tampering.",
+        inline=False
+    )
+    embed.set_footer(
+        text="Built, hosted, and maintained by Velvox. This is an open-source project."
+    )
+
+    # Respond with the embed
+    await interaction.response.send_message(embed=embed, ephemeral=False)
 
 # /reporthelp command
 @bot.tree.command(name="reporthelp", description="Report commands and help.")
