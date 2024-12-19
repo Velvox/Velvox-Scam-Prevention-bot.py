@@ -8,6 +8,7 @@ Velvox Scam Prevention Bot is a powerful Discord bot designed to protect your se
 - **NSFW Server Detection**: Automatically detects and flags servers marked as NSFW using a database.
 - **Scam Link Detection**: Scans for scam links hidden behind legitimate domains (e.g., `[steamcommunity.com/redeem](https://scamlink.tdl)`).
 - **Malicious Executable Detection**: Warns users about potentially harmful executables, such as APK, MSI, or PS1 files.
+- **And more**: And commands to get info about websites, check files etc...
 
 ## Bot Setup
 
@@ -101,6 +102,7 @@ Velvox Scam Prevention Bot supports [Discord Slash Commands](https://discord.com
 #### Standard Commands
 
 - `/vtdcheck`: Checks a domain or URL for malicious activity using VirusTotal. Provides a summary of the findings and a link to VirusTotal for detailed information.
+- `/checkfile`: Gets the hash(SHA256) and link to threat inteligence sources for more information about the potential malicious files.
 
 ### Reporting
 
@@ -123,6 +125,11 @@ Velvox Scam Prevention Bot supports [Discord Slash Commands](https://discord.com
 
 - `/scanmessage`: Scans a message for NSFW content and potential scams. Provides feedback on whether the content is flagged.
 
+### Other
+
+- `/botinfo`: Gives information about the bot.
+- `/domaincheck`: Check an domain on multiple sources on its security practices.
+- `/messagedelete`: (ADMIN ONLY) Disables/enables the message deletion function on malicouis messages.
 
 
 ## License
