@@ -323,8 +323,28 @@ async def on_message(message):
             break
 
     # Check for malicious or NSFW server
-    invite_urls = re.findall(r'https://discord(?:\.com|app\.com)/invite/([a-zA-Z0-9_-]+)', message.content)
-    for invite_code in invite_urls:
+    # Regex for URLs with /invite/
+    invite_urls_with_invite = re.findall(
+        r'https://discord(?:\.com|\.gg|\.app\.com)/invite/([a-zA-Z0-9_-]+)',
+        message.content
+    )
+
+    # Regex for URLs without /invite/ (direct short links)
+    invite_urls_without_invite = re.findall(
+        r'https://discord(?:\.com|\.gg|\.app\.com)/([a-zA-Z0-9_-]+)',
+        message.content
+    )
+    
+    # Regex for URL's with 
+    invite_url_discord_embedded = re.findall(
+    	r'(discord\.gg)/([a-zA-Z0-9_-]+)',
+        message.content
+    )
+
+    # Combine both results into a single list
+    invite_codes = invite_urls_with_invite + invite_urls_without_invite + [code[1] for code in invite_url_discord_embedded]
+    
+    for invite_code in invite_codes:
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(f"https://discord.com/api/v10/invites/{invite_code}") as response:
@@ -344,7 +364,7 @@ async def on_message(message):
                                     
                                     await message.channel.send(
                                         embed=discord.Embed(
-                                            title="❗Malicious NSFW server link detected!❗",
+                                            title="❗Malicious server link detected!❗",
                                             description="This server join link has been flagged as potentially malicious based on our records and the Discord API check. Please exercise caution.\n\nThese servers are often used to harvest user credentials or other data with malicious intent.",
                                             color=discord.Color.red()
                                         ).add_field(
@@ -354,6 +374,10 @@ async def on_message(message):
                                         ).add_field(
                                             name="Server ID",
                                             value=guild_id,
+                                            inline=False
+                                         ).add_field(
+                                            name="Report false hit",
+                                            value="If this embed is placed on the wrong invite URL report it to us! [Report it in a Github issue](https://github.com/Velvox/Velvox-Scam-Prevention-bot.py/issues/new)",
                                             inline=False
                                         ).set_footer(text="Built, hosted, and maintained by Velvox. This is an open-source project.")
                                     )
