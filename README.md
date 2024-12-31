@@ -115,21 +115,15 @@ Velvox Scam Prevention Bot supports [Discord Slash Commands](https://discord.com
 - `/reportserver`: Report a server for suspicious or malicious activity. Updates the database with the report details.
 - `/reportbot`: Report a bot for suspicious or malicious activity. Updates the database with the report details.
 
-### Anti-NSFW and Malicious Content
-
-#### Important Commands
-
-- `/checkserver`: Verifies if a server is flagged as malicious or NSFW based on its invite link and compares it with the database and Discord API.
-
-#### Standard Commands
-
-- `/scanmessage`: Scans a message for NSFW content and potential scams. Provides feedback on whether the content is flagged.
-
 ### Other
 
 - `/botinfo`: Gives information about the bot.
 - `/domaincheck`: Check an domain on multiple sources on its security practices.
-- `/messagedelete`: (ADMIN ONLY) Disables/enables the message deletion function on malicouis messages.
+- `/messagedelete`: **(ADMIN ONLY)** Disables/enables the message deletion function on malicouis messages.
+
+### How to check if an server invite is malicious?
+
+- Just send the link to the bot if it is flagged it will respond whith an embed. If no reply is send this indicates that we did not get reports from this server. THIS DOES NOT MEAN THAT IT IS AN SAFE ONE. Always proceed with caution!
 
 ### Known issues
 
