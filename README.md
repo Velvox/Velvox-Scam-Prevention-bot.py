@@ -131,6 +131,9 @@ Velvox Scam Prevention Bot supports [Discord Slash Commands](https://discord.com
 - `/domaincheck`: Check an domain on multiple sources on its security practices.
 - `/messagedelete`: (ADMIN ONLY) Disables/enables the message deletion function on malicouis messages.
 
+### Known issues
+
+- The bot may send multiple replies to an server link that is flagged in our database. This may be fixed in the future.
 
 ## License
 
