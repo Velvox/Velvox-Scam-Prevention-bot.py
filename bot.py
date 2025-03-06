@@ -8,6 +8,7 @@ import itertools
 import hashlib
 import socket
 from urllib.parse import urlparse
+import json
 
 # Create bot instance with intents
 intents = discord.Intents.default()
@@ -33,6 +34,20 @@ activities = itertools.cycle([
     discord.Activity(type=discord.ActivityType.playing, name="with API data")
 ])
 
+# Function to change bot activity every 5 seconds
+@tasks.loop(seconds=5)
+async def change_activity():
+    current_activity = next(activities)
+    await bot.change_presence(activity=current_activity)
+ 
+@bot.event
+async def on_ready():
+    print(f'Logged in as {bot.user}')
+    change_activity.start()
+    await bot.tree.sync()
+    await fetch_urls() 
+    print('Slash commands synchronized with Discord.')
+    print(f'Bot started successfully')
 
 # Function to load DM user permissions from the database
 def load_dmuser_permissions():
@@ -127,20 +142,59 @@ async def download_file_and_hash(attachment_url):
                 }
     return None
 
-        
-# Function to change bot activity every 5 seconds
-@tasks.loop(seconds=5)
-async def change_activity():
-    current_activity = next(activities)
-    await bot.change_presence(activity=current_activity)
- 
-@bot.event
-async def on_ready():
-    print(f'Logged in as {bot.user}')
-    change_activity.start()  # Start the loop when the bot is ready
-    # Sync slash commands with Discord
-    await bot.tree.sync()
-    print('Slash commands synchronized with Discord.')
+scam_links = set()
+
+async def fetch_urls():
+    urls = [
+        "https://raw.githubusercontent.com/Discord-AntiScam/scam-links/refs/heads/main/list.json",
+        "https://raw.githubusercontent.com/nikolaischunk/discord-phishing-links/refs/heads/main/domain-list.json",
+        "https://raw.githubusercontent.com/Velvox/Velvox-Scam-Prevention-bot.py/refs/heads/main/domain_blocklist_test.json"
+    ]
+    
+    async with aiohttp.ClientSession() as session:
+        for url in urls:
+            try:
+                async with session.get(url) as response:
+                    text = await response.text()  # Get raw text
+                    try:
+                        data = json.loads(text)  # Manually parse JSON
+                        # Check if the key 'domains' exists, otherwise use the root of the JSON
+                        if "domains" in data:
+                            domains = data["domains"]
+                        else:
+                            domains = data  # Fallback to the root if 'domains' is not present
+                        
+                        scam_links.update(domains)  # Add the domains to the in-memory scam list
+                        print(f"Loaded scam domains from {url}: {domains[:100]}")  # Debug: Print first 5 entries
+                    except json.JSONDecodeError as e:
+                        print(f"Error decoding JSON from {url}:", e)
+            except Exception as e:
+                print(f"Error fetching data from {url}: {e}")
+
+def check_reportedscam(message):
+    """Check if a message contains a known scam URL."""
+    # Ensure we're passing the message content (a string) to re.findall()
+    urls = re.findall(r'(?:http|https)://[^\s]+', message.content)
+
+    return next((url for url in urls if any(domain in url for domain in scam_links)), None)
+
+from urllib.parse import urlparse
+
+def create_virustotal_link(url):
+    """Generate the VirusTotal link for a given URL or domain."""
+    # Remove the protocol (http:// or https://)
+    parsed_url = urlparse(url)
+    
+    # If the URL is a domain (no path or query), use the netloc directly
+    # If it's a full URL, extract only the domain
+    domain = parsed_url.netloc if parsed_url.netloc else parsed_url.path
+    
+    # VirusTotal requires the domain, not the full URL or the protocol
+    virustotal_base_url = "https://www.virustotal.com/gui/domain/"
+    
+    return f"{virustotal_base_url}{domain}"
+
+
 
 # List of known URL shorteners
 SHORTENERS = [
@@ -173,6 +227,30 @@ async def on_message(message):
     signatures = load_signatures()
     authorized_user_ids = load_dmuser_permissions()
     safe_message = True  # Assume message is safe initially
+    detected_url = check_reportedscam(message)
+
+    if detected_url:
+        print(f"REPORTED URL DETECTED: {detected_url}")
+        
+        # Create the embed in the on_message event
+        reportedembed = discord.Embed(
+            title="❌Reported URL found!❌",
+            description="The message sent contains a link that is linked to scams and/or malware!\n**Proceed with caution!**",
+            color=discord.Color.red()
+        )
+        reportedembed.add_field(name="Detected URL", value=f"```{detected_url}```", inline=False)
+        reportedembed.add_field(name="Info", value=f'Do not interact with the "Detected URL"', inline=True)
+        
+        virustotal_link = create_virustotal_link(detected_url)
+        reportedembed.add_field(name="VirusTotal Check", value=f"[Click to check on VirusTotal]({virustotal_link})", inline=False)
+        reportedembed.add_field(
+            name="Message Link",
+            value=f"[Click to view](https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id})",
+            inline=False
+        )
+        
+        await message.channel.send(embed=reportedembed)
+        return
 
     # Check for scams
     if check_for_scam(message.content, signatures):
@@ -197,6 +275,11 @@ async def on_message(message):
         scam_info_embed.add_field(
             name="Message Link",
             value=f"[Click here to view the message](https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id})",
+            inline=False
+        )
+        scam_info_embed.add_field(
+            name="Original message",
+            value=f"```{message.content}```",
             inline=False
         )
         scam_info_embed.set_footer(text="Built, hosted, and maintained by Velvox. This is an open-source project.")
@@ -728,7 +811,7 @@ async def botinfo(interaction: discord.Interaction):
     )
 
     # Send the embed message
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # Run the bot
 bot.run(config.BOT_TOKEN)
