@@ -21,7 +21,7 @@ Invite the bot https://discord.com/oauth2/authorize?client_id=128162751648576728
 
 #### 1. **Download the Bot Package**
 
-Download the `bot.py` and `config.py`
+Download the `bot.py`, `requirements.txt` and `config.py`
 
 #### 2. **Upload the Package to Velvox Gamehosting**
 
@@ -31,7 +31,7 @@ Download the `bot.py` and `config.py`
 
 #### 3. **Configure the Bot**
 
-- Open the `bot.py` file and configure the MySQL connection in the `get_mysql_connection` function by entering the correct login credentials:
+- Open the `config.py` file and configure the MySQL connection in the `# MySQL configuration` function by entering the correct login credentials:
 
     ```python
     # MySQL Database Configuration
@@ -41,11 +41,11 @@ Download the `bot.py` and `config.py`
     MYSQL_DATABASE = "yourdatabasename"
     ```
 
-- Add your Discord bot token at the `bot.run()` line, which can be obtained from the [Discord Developer Portal](https://discord.com/developers).
+- Add your Discord bot token at the `BOT_TOKEN` line, which can be obtained from the [Discord Developer Portal](https://discord.com/developers).
 
     ```python
-    # Run the bot with your token
-    bot.run("yourbottoken")
+    # Bot configuration
+    BOT_TOKEN = 'yourbottoken'
     ```
 
 - Ensure the MySQL database has the necessary tables. Create them with the following SQL statement:
