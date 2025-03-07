@@ -21,12 +21,12 @@ Invite the bot https://discord.com/oauth2/authorize?client_id=128162751648576728
 
 #### 1. **Download the Bot Package**
 
-Download the `.tar` package of the bot from the [releases page](https://github.com/Velvox/Velvox-Scam-Prevention-bot.py/releases) or import it to your server.
+Download the `bot.py` and `config.py`
 
 #### 2. **Upload the Package to Velvox Gamehosting**
 
 - Purchase your [Discord bot](https://billing.velvox.net/index.php/store/discord-bot) with the "Python Generic" option.
-- Go to the [game panel](https://game.velvox.net), navigate to "your server" > Files, and upload the `.tar` file into the `/home/container/` directory. Extract the contents of the `.tar` file.
+- Go to the [game panel](https://game.velvox.net), navigate to "your server" > Files, and upload the files into the `/home/container/` directory.
 - Create a database in the "Database" tab and save the login details.
 
 #### 3. **Configure the Bot**
