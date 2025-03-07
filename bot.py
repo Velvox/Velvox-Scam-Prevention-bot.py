@@ -13,7 +13,7 @@ import json
 # Create bot instance with intents
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True
+intents.members = False
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
@@ -180,6 +180,18 @@ def check_reportedscam(message):
 
 from urllib.parse import urlparse
 
+def check_safe_domain(message):
+    """Return True if a safe URL is present, otherwise return False."""
+    safe_domains = ["discord.com", "discord.gg"]  # Extend this list as needed
+    urls = re.findall(r'(?:http|https)://[^\s]+', message.content)
+    
+    for url in urls:
+        parsed = urlparse(url)
+        # Check if the parsed domain contains any of the safe domains
+        if any(safe in parsed.netloc for safe in safe_domains):
+            return True
+    return False
+
 def create_virustotal_link(url):
     """Generate the VirusTotal link for a given URL or domain."""
     # Remove the protocol (http:// or https://)
@@ -226,33 +238,31 @@ async def on_message(message):
     # Load necessary data
     signatures = load_signatures()
     authorized_user_ids = load_dmuser_permissions()
-    safe_message = True  # Assume message is safe initially
-    detected_url = check_reportedscam(message)
-
-    if detected_url:
-        print(f"REPORTED URL DETECTED: {detected_url}")
-        
-        # Create the embed in the on_message event
-        reportedembed = discord.Embed(
-            title="❌Reported URL found!❌",
-            description="The message sent contains a link that is linked to scams and/or malware!\n**Proceed with caution!**",
-            color=discord.Color.red()
-        )
-        reportedembed.add_field(name="Detected URL", value=f"```{detected_url}```", inline=False)
-        reportedembed.add_field(name="Info", value=f'Do not interact with the "Detected URL"', inline=True)
-        
-        virustotal_link = create_virustotal_link(detected_url)
-        reportedembed.add_field(name="VirusTotal Check", value=f"[Click to check on VirusTotal]({virustotal_link})", inline=False)
-        reportedembed.add_field(
-            name="Message Link",
-            value=f"[Click to view](https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id})",
-            inline=False
-        )
-        
-        await message.channel.send(embed=reportedembed)
-        return
-
-    # Check for scams
+    
+    if not check_safe_domain(message):
+        detected_url = check_reportedscam(message)
+        if detected_url:
+            print(f"REPORTED URL DETECTED: {detected_url}")
+            
+            # Create and send the reported URL embed
+            reportedembed = discord.Embed(
+                title="❌Reported URL found!❌",
+                description="The message sent contains a link that is linked to scams and/or malware!\n**Proceed with caution!**",
+                color=discord.Color.red()
+            )
+            reportedembed.add_field(name="Detected URL", value=f"```{detected_url}```", inline=False)
+            reportedembed.add_field(name="Info", value='Do not interact with the "Detected URL"', inline=True)
+            
+            virustotal_link = create_virustotal_link(detected_url)
+            reportedembed.add_field(name="VirusTotal Check", value=f"[Click to check on VirusTotal]({virustotal_link})", inline=False)
+            reportedembed.add_field(
+                name="Message Link",
+                value=f"[Click to view](https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id})",
+                inline=False
+            )
+            await message.channel.send(embed=reportedembed)
+    
+    # Next, check for scams based on message content signatures.
     if check_for_scam(message.content, signatures):
         scam_info_embed = discord.Embed(
             title="❗Possible Scam Detected❗",
@@ -289,11 +299,10 @@ async def on_message(message):
         except discord.errors.Forbidden:
             print("Couldn't send message in the channel, the bot might not have the right permissions.")
 
-        # Send DM only to authorized users
+        # Optionally, send DM to authorized users
         for member in message.guild.members:
             if member.bot:
                 continue  # Skip bots
-
             if member.id in authorized_user_ids:
                 try:
                     await member.send(embed=scam_info_embed)
@@ -302,7 +311,7 @@ async def on_message(message):
                 except discord.errors.HTTPException as e:
                     print(f"HTTPException while DMing {member.name}: {e}")
 
-    # Check for shortened links
+    # Lastly, check for shortened links
     urls = re.findall(r'https?://\S+', message.content)
     for url in urls:
         if is_shortened_url(url):
@@ -325,22 +334,21 @@ async def on_message(message):
                 value=f"**`{expanded_url}`**",
                 inline=False
             )
-
             if domain:
                 embed.add_field(
                     name="<:vtlogo:1281911851793514536> Check the Domain/URL with VirusTotal",
                     value=f"[Click here to check **{domain}** on VirusTotal](https://www.virustotal.com/gui/domain/{domain})",
                     inline=False
                 )
-
             embed.set_footer(text="Built, hosted, and maintained by Velvox. This is an open-source project.")
 
             try:
                 await message.channel.send(embed=embed)
             except discord.errors.Forbidden:
                 print("Couldn't send message in the channel, the bot might not have the right permissions.")
-            safe_message = False  # Mark message as unsafe for deletion
+            # If you want to mark the message as unsafe or take other actions, do so here.
             break
+
 
     # Check for suspicious file attachments
     for attachment in message.attachments:
@@ -425,7 +433,7 @@ async def on_message(message):
     )
 
     # Combine both results into a single list
-    invite_codes = invite_urls_with_invite + invite_urls_without_invite + [code[1] for code in invite_url_discord_embedded]
+    invite_codes = invite_urls_with_invite or invite_urls_without_invite or [code[1] for code in invite_url_discord_embedded]
     
     for invite_code in invite_codes:
         async with aiohttp.ClientSession() as session:
@@ -468,13 +476,16 @@ async def on_message(message):
             except Exception as e:
                 print(f"Error checking invite link: {e}")
 
+##
+## DELETION IS DISABLED DUE TO ISSUES (And me not having the time now to make an simple fix)
+##
     # If the message is flagged as unsafe, delete it
-    if not safe_message:
-        try:
-            await message.delete()
-            print(f"Deleted message from {message.author} in {message.channel}.")
-        except discord.errors.Forbidden:
-            print("Couldn't delete the message, the bot might not have the right permissions.")
+#    if not safe_message:
+#        try:
+#            await message.delete()
+#            print(f"Deleted message from {message.author} in {message.channel}.")
+#        except discord.errors.Forbidden:
+#            print("Couldn't delete the message, the bot might not have the right permissions.")
 
     # Ensure bot continues processing commands even if deletion fails
     await bot.process_commands(message)
@@ -765,33 +776,33 @@ async def checkfile(interaction: discord.Interaction, file: discord.Attachment):
     # Send embed with results
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="messagedelete", description="Toggle message delete feature for this server")
-@commands.has_permissions(administrator=True)
-async def messagedelete(interaction: discord.Interaction):
+#@bot.tree.command(name="messagedelete", description="Toggle message delete feature for this server")
+#@commands.has_permissions(administrator=True)
+#async def messagedelete(interaction: discord.Interaction):
     # Fetch the current value for the guild_id
-    guild_id = str(interaction.guild.id)
-    connection = pymysql.connect(**db_config)  # Use the dictionary directly here
+#    guild_id = str(interaction.guild.id)
+#    connection = pymysql.connect(**db_config)  # Use the dictionary directly here
 
-    try:
-        with connection.cursor() as cursor:
+#    try:
+#        with connection.cursor() as cursor:
             # Check current status
-            cursor.execute("SELECT status FROM message_delete WHERE guild_id = %s", (guild_id,))
-            result = cursor.fetchone()
+#            cursor.execute("SELECT status FROM message_delete WHERE guild_id = %s", (guild_id,))
+#            result = cursor.fetchone()
 
-            if result:
-                current_value = result['status']
-                new_value = '0' if current_value == '1' else '1'
-                cursor.execute("UPDATE message_delete SET status = %s WHERE guild_id = %s", (new_value, guild_id))
-                message = "Message delete feature is now enabled." if new_value == '1' else "Message delete feature is now disabled."
-            else:
-                cursor.execute("INSERT INTO message_delete (guild_id, status) VALUES (%s, '1')", (guild_id,))
-                message = "Message delete feature is now enabled."
+#            if result:
+#                current_value = result['status']
+#                new_value = '0' if current_value == '1' else '1'
+#                cursor.execute("UPDATE message_delete SET status = %s WHERE guild_id = %s", (new_value, guild_id))
+#                message = "Message delete feature is now enabled." if new_value == '1' else "Message delete feature is now disabled."
+#            else:
+#                cursor.execute("INSERT INTO message_delete (guild_id, status) VALUES (%s, '1')", (guild_id,))
+#                message = "Message delete feature is now enabled."
 
-            connection.commit()
-    finally:
-        connection.close()
+#            connection.commit()
+#    finally:
+#        connection.close()
 
-    await interaction.response.send_message(message, ephemeral=True)
+#    await interaction.response.send_message(message, ephemeral=True)
 
 # Define the botinfo command
 @bot.tree.command(name='botinfo', description='Get information about the bot.')
