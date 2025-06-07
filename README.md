@@ -19,6 +19,9 @@ Invite the bot https://discord.com/oauth2/authorize?client_id=128162751648576728
 
 ### Hosting the bot your self using Velvox Gamehosting
 
+> [!WARNING]
+> I did not have time to modify the setup/install guide so you may run in to simple issues like need to use `.env` insted of the `config.py`. When I got some spare time I will modify the guide bellow. If you just want to stay protected with out the selfhosting hasstle just invite the bot via the link above.
+
 #### 1. **Download the Bot Package**
 
 Download the `bot.py`, `requirements.txt` and `config.py`
