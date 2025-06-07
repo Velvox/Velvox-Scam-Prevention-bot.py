@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands, tasks
 import pymysql
-import config
 import re
 import aiohttp
 import itertools
@@ -9,15 +8,33 @@ import hashlib
 import socket
 from urllib.parse import urlparse
 import json
+from typing import Optional
+from dotenv import dotenv_values
 
+envfile = dotenv_values(".env")
+BOT_TOKEN       = envfile.get("BOT_TOKEN")
+MYSQLUSER       = envfile.get("MYSQLUSER")
+MYSQLPASSOWRD   = envfile.get("MYSQLPASSOWRD")
+MYSQLDATABASE   = envfile.get("MYSQLDATABASE")
+MYSQLHOST       = envfile.get("MYSQLHOST")
+ 
 # Create bot instance with intents
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = False
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix=lambda bot, msg: [], intents=intents)
 
-db_config = config.db_config
+db_config = {
+    'host': MYSQLHOST,  # Change this to your MySQL host
+    'user': MYSQLUSER,  # Your MySQL username
+    'password': MYSQLPASSOWRD,  # Your MySQL password
+    'database': MYSQLDATABASE,  # Your database name
+    'cursorclass': pymysql.cursors.DictCursor,
+    'ssl': {
+        'ca': 'isrgrootx1.pem',
+    }
+}
 
 # List of bot activities
 activities = itertools.cycle([
@@ -45,9 +62,11 @@ async def on_ready():
     print(f'Logged in as {bot.user}')
     change_activity.start()
     await bot.tree.sync()
-    await fetch_urls() 
-    print('Slash commands synchronized with Discord.')
+    fetch_urls.start()
+    print(f'Fetched malicious domains')
+    print(f'Slash commands synchronized with Discord.')
     print(f'Bot started successfully')
+    print(f'Whatching for the following shortners:{SHORTENERS}')
 
 # Function to load DM user permissions from the database
 def load_dmuser_permissions():
@@ -144,6 +163,7 @@ async def download_file_and_hash(attachment_url):
 
 scam_links = set()
 
+@tasks.loop(hours=6)
 async def fetch_urls():
     urls = [
         "https://raw.githubusercontent.com/Discord-AntiScam/scam-links/refs/heads/main/list.json",
@@ -171,14 +191,25 @@ async def fetch_urls():
             except Exception as e:
                 print(f"Error fetching data from {url}: {e}")
 
+#def check_reportedscam(message):
+#    """Check if a message contains a known scam URL."""
+    # Ensure we're passing the message content (a string) to re.findall()
+#    urls = re.findall(r'(?:http|https)://[^\s]+', message.content)
+
+#    return next((url for url in urls if any(domain in url for domain in scam_links)), None)
+
 def check_reportedscam(message):
     """Check if a message contains a known scam URL."""
-    # Ensure we're passing the message content (a string) to re.findall()
     urls = re.findall(r'(?:http|https)://[^\s]+', message.content)
-
-    return next((url for url in urls if any(domain in url for domain in scam_links)), None)
-
-from urllib.parse import urlparse
+    
+    for url in urls:
+        parsed = urlparse(url)
+        domain = parsed.netloc  # Extracts only the domain/subdomain part
+        
+        if domain in scam_links:  # Now checks exact domain matches
+            return url
+    
+    return None
 
 def check_safe_domain(message):
     """Return True if a safe URL is present, otherwise return False."""
@@ -207,7 +238,6 @@ def create_virustotal_link(url):
     return f"{virustotal_base_url}{domain}"
 
 
-
 # List of known URL shorteners
 SHORTENERS = [
     "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "shorturl.com",
@@ -216,7 +246,7 @@ SHORTENERS = [
     "snip.ly", "cutt.ly", "lnkd.in", "linktr.ee", "short.ie", "amzn.to",
     "lil.link", "clk.im", "plink.io", "link.sh", "shrtco.de", "go2l.ink",
     "cli.re", "short.cm", "tr.im", "mcaf.ee", "j.mp", "linkz.ai",
-    "short.link", "fast.io", "shorturl.at", "y2u.be", "linkd.in", "u.to"
+    "short.link", "fast.io", "shorturl.at", "y2u.be", "linkd.in", "u.to", "e.vg"
 ]
 
 # List of suspicious file extensions
@@ -246,27 +276,48 @@ async def on_message(message):
             
             # Create and send the reported URL embed
             reportedembed = discord.Embed(
-                title="❌Reported URL found!❌",
+                title="❌ Reported URL found! ❌",
                 description="The message sent contains a link that is linked to scams and/or malware!\n**Proceed with caution!**",
                 color=discord.Color.red()
             )
+            reportedembed.add_field(
+            name="Reason",
+            value=f"This domain is listed in one of the block lists we use. This domain could be a phishing site, IP grabber, malware host or something else that is malicious.",
+            inline=False
+            )
             reportedembed.add_field(name="Detected URL", value=f"```{detected_url}```", inline=False)
             reportedembed.add_field(name="Info", value='Do not interact with the "Detected URL"', inline=True)
-            
+
             virustotal_link = create_virustotal_link(detected_url)
-            reportedembed.add_field(name="VirusTotal Check", value=f"[Click to check on VirusTotal]({virustotal_link})", inline=False)
             reportedembed.add_field(
-                name="Message Link",
-                value=f"[Click to view](https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id})",
+                name="VirusTotal Check", 
+                value=f"[Click to check on VirusTotal]({virustotal_link})", 
                 inline=False
             )
-            await message.channel.send(embed=reportedembed)
+
+            # Message link or DM note
+            if message.guild:
+                message_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
+                reportedembed.add_field(
+                    name="Message Link", 
+                    value=f"[Click to view]({message_link})", 
+                    inline=False
+                )
+            else:
+                dm_message_link = f"https://discord.com/channels/@me/{message.channel.id}/{message.id}"
+                reportedembed.add_field(
+                    name="Message Link", 
+                    value=f"[Click to view]({dm_message_link})", 
+                    inline=False
+                )
+                
+                await message.channel.send(embed=reportedembed)
     
     # Next, check for scams based on message content signatures.
     if check_for_scam(message.content, signatures):
         scam_info_embed = discord.Embed(
-            title="❗Possible Scam Detected❗",
-            description="We've detected that one of the messages might resemble a common scam. Please review the following details:",
+            title="🚨Possible Scam Detected🚨",
+            description="We've detected that one of the messages might resemble a common scam. Please review the following details.",
             color=discord.Color.red()
         )
         scam_info_embed.add_field(
@@ -274,25 +325,38 @@ async def on_message(message):
             value="Scams often attempt to trick users into sharing login, banking, or other personal information. Be cautious of suspicious links and requests."
         )
         scam_info_embed.add_field(
-            name="Common Scam Types",
-            value='1. Phishing\n2. Fake Giveaways\n3. "Sorry I reported you" (Often used to phish for login info)\n4. Discord staff impersonation scams'
+            name="Common Scams",
+            value=
+            '1. Fake Giveaways\n' \
+            '2. "Sorry I reported you" \n' \
+            '3. Discord staff impersonationn\n' \
+            '4. Fake giftcards'
         )
         scam_info_embed.add_field(
             name="Have you been scammed or phished?",
             value="Run the command /igotscammed",
             inline=False
         )
-        scam_info_embed.add_field(
-            name="Message Link",
-            value=f"[Click here to view the message](https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id})",
-            inline=False
-        )
+
+        if message.guild:
+            scam_info_embed.add_field(
+                name="Message Link", 
+                value=f"[Click here to view the message]](https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id})", 
+                inline=False
+            )
+        else:
+            scam_info_embed.add_field(
+                name="Message Link", 
+                value=f"[Click here to view the message](https://discord.com/channels/@me/{message.channel.id}/{message.id})", 
+                inline=False
+            )
+
         scam_info_embed.add_field(
             name="Original message",
-            value=f"```{message.content}```",
+            value=f"```{message.content}```\n We recommend to not interact with the message and report it to server staff.",
             inline=False
         )
-        scam_info_embed.set_footer(text="Built, hosted, and maintained by Velvox. This is an open-source project.")
+        scam_info_embed.set_footer(text="Built, hosted and maintained by Velvox. This is an open-source project.")
 
         try:
             await message.channel.send(embed=scam_info_embed)
@@ -300,54 +364,68 @@ async def on_message(message):
             print("Couldn't send message in the channel, the bot might not have the right permissions.")
 
         # Optionally, send DM to authorized users
-        for member in message.guild.members:
-            if member.bot:
-                continue  # Skip bots
-            if member.id in authorized_user_ids:
-                try:
-                    await member.send(embed=scam_info_embed)
-                except discord.errors.Forbidden:
-                    print(f"Couldn't DM {member.name}, they might have DMs disabled.")
-                except discord.errors.HTTPException as e:
-                    print(f"HTTPException while DMing {member.name}: {e}")
+        if message.guild:
+            for member in message.guild.members:
+                if member.bot:
+                    continue  # Skip bots
+                if member.id in authorized_user_ids:
+                    try:
+                        await member.send(embed=scam_info_embed)
+                    except discord.errors.Forbidden:
+                        print(f"Couldn't DM {member.name}, they might have DMs disabled.")
+                    except discord.errors.HTTPException as e:
+                        print(f"HTTPException while DMing {member.name}: {e}")
+        else:
+            print("Message is from a DM. Skipping member notifications")
 
     # Lastly, check for shortened links
-    urls = re.findall(r'https?://\S+', message.content)
+    urls = re.findall(r'(https?://[^\s()]+(?:\([^\s()]*\)[^\s()]*)*)(?:\))?', message.content)
     for url in urls:
         if is_shortened_url(url):
             # Expand the shortened URL
             expanded_url = await expand_url(url)
-            domain = extract_domain(expanded_url)
+            domain = extract_domain(expanded_url) if expanded_url != url else None
 
             embed = discord.Embed(
                 title="⚠️ Shortened Link Detected",
                 description="We've detected that a shortened link was posted. Be cautious as these links can hide malicious content.",
                 color=discord.Color.orange()
             )
+
             embed.add_field(
                 name="Shortened Link",
                 value=f"**`{url}`**",
                 inline=False
             )
-            embed.add_field(
-                name="Expanded Link",
-                value=f"**`{expanded_url}`**",
-                inline=False
-            )
+
+            if expanded_url != url:
+                embed.add_field(
+                    name="Expanded Link",
+                    value=f"**`{expanded_url}`**",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="Expanded Link",
+                    value="**Unknown**",
+                    inline=False
+                )
+
             if domain:
                 embed.add_field(
                     name="<:vtlogo:1281911851793514536> Check the Domain/URL with VirusTotal",
                     value=f"[Click here to check **{domain}** on VirusTotal](https://www.virustotal.com/gui/domain/{domain})",
                     inline=False
                 )
+
             embed.set_footer(text="Built, hosted, and maintained by Velvox. This is an open-source project.")
 
             try:
                 await message.channel.send(embed=embed)
             except discord.errors.Forbidden:
                 print("Couldn't send message in the channel, the bot might not have the right permissions.")
-            # If you want to mark the message as unsafe or take other actions, do so here.
-            break
+
+        break  # Only handle one link per message
 
 
     # Check for suspicious file attachments
@@ -604,6 +682,72 @@ async def vtdcheck(interaction: discord.Interaction, domain: str):
     # Send the embed
     await interaction.response.send_message(embed=embed)
 
+def extract_asn_from_org(org_field: str) -> Optional[str]:
+    match = re.match(r"AS(\d+)", org_field)
+    if match:
+        return f"AS{match.group(1)}"
+    return None
+
+async def fetch_rpki_data(ip: str, asn: Optional[str] = None) -> dict:
+    result = {
+        "ripe_status": "❓Unknown",
+        "prefix": None,
+        "asn": asn
+    }
+
+    async with aiohttp.ClientSession() as session:
+        # Step 1: Get prefix and ASN from RIPE prefix-overview API
+        try:
+            url = f"https://stat.ripe.net/data/prefix-overview/data.json?resource={ip}"
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    #print("[RIPE prefix-overview response]", data)
+
+                    prefix = data.get("data", {}).get("resource")
+                    if prefix:
+                        result["prefix"] = prefix
+
+                    if not asn:
+                        asns = data.get("data", {}).get("asns", [])
+                        if asns and isinstance(asns, list):
+                            first_asn = asns[0].get("asn")
+                            if first_asn:
+                                result["asn"] = f"AS{first_asn}"
+                else:
+                    print(f"[RIPE prefix-overview] Unexpected status code: {resp.status}")
+        except Exception as e:
+            print(f"[RIPE prefix-overview error] {e}")
+
+        # Step 2: RPKI validation from RIPE API
+        if result["prefix"] and result["asn"]:
+            try:
+                rpki_url = (
+                    f"https://stat.ripe.net/data/rpki-validation/data.json?"
+                    f"resource={result['asn']}&prefix={result['prefix']}"
+                )
+                async with session.get(rpki_url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        #print("[RIPE rpki-validation response]", data)
+
+                        rpki_status = data.get("data", {}).get("status")
+                        if rpki_status:
+                            result["ripe_status"] = rpki_status.capitalize()
+                        else:
+                            roas = data.get("data", {}).get("validating_roas", [])
+                            if roas and isinstance(roas, list):
+                                validity = roas[0].get("validity")
+                                if validity:
+                                    result["ripe_status"] = validity.capitalize()
+                    else:
+                        print(f"[RIPE rpki-validation] Unexpected status code: {resp.status}")
+            except Exception as e:
+                print(f"[RIPE RPKI validation error] {e}")
+
+    return result
+
+
 @bot.tree.command(name="domaincheck", description="Check a domain name for its security practices")
 async def domaincheck(interaction: discord.Interaction, domain: str):
     try:
@@ -624,14 +768,20 @@ async def domaincheck(interaction: discord.Interaction, domain: str):
             if resp.status == 200:
                 data = await resp.json()
                 hosting_provider = data.get("org", "Unknown")
+                asn = extract_asn_from_org(hosting_provider)
+                rpki_data = await fetch_rpki_data(ip_address, asn)
                 country_code = data.get("country", "").lower()  # Get country code and convert to lowercase
                 if country_code:
                     country_flag = f":flag_{country_code}:"
 
+   
     # Build the URLs
     security_headers_url = f"https://securityheaders.com/?q={domain}&followRedirects=on"
     ssl_labs_url = f"https://www.ssllabs.com/ssltest/analyze.html?d={domain}"
     easydmarc_url = f"https://easydmarc.com/tools/domain-scanner?domain={domain}"
+
+    prefix = rpki_data.get("prefix", "unknown")
+    asn = rpki_data.get("asn", "unknown")
 
     # Create the embed
     embed = discord.Embed(
@@ -648,6 +798,16 @@ async def domaincheck(interaction: discord.Interaction, domain: str):
         name="Hosting Provider",
         value=f"{country_flag} `{hosting_provider}`" if country_flag else f"`{hosting_provider}`",
         inline=True
+    )
+    embed.add_field(
+    name="RPKI Status",
+    value=(
+        f"**RIPE:** `{rpki_data['ripe_status']}`\n"
+        f"[Raw API response](https://stat.ripe.net/data/rpki-validation/data.json?resource={asn}&prefix={prefix})\n"
+        f"__*Why it matters:*__ If a route isn't protected by RPKI, attackers can hijack IP prefixes using BGP "
+        f"manipulation — potentially rerouting, intercepting, or dropping traffic intended for that domain."
+    ),
+    inline=False
     )
     embed.add_field(
         name="Security Headers",
@@ -825,4 +985,4 @@ async def botinfo(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # Run the bot
-bot.run(config.BOT_TOKEN)
+bot.run(BOT_TOKEN)
