@@ -1,8 +1,8 @@
-import discord
-from discord.ext import commands, tasks
+import discord # pyright: ignore[reportMissingImports]
+from discord.ext import commands, tasks # pyright: ignore[reportMissingImports]
 import pymysql
 import re
-import aiohttp
+import aiohttp # pyright: ignore[reportMissingImports]
 import itertools
 import hashlib
 import socket
@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import json
 from typing import Optional
 from dotenv import dotenv_values
+import ssl
 
 envfile = dotenv_values(".env")
 BOT_TOKEN       = envfile.get("BOT_TOKEN")
@@ -25,15 +26,17 @@ intents.members = False
 
 bot = commands.Bot(command_prefix=lambda bot, msg: [], intents=intents)
 
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
+
 db_config = {
     'host': MYSQLHOST,  # Change this to your MySQL host
     'user': MYSQLUSER,  # Your MySQL username
     'password': MYSQLPASSOWRD,  # Your MySQL password
     'database': MYSQLDATABASE,  # Your database name
     'cursorclass': pymysql.cursors.DictCursor,
-    'ssl': {
-        'ca': 'isrgrootx1.pem',
-    }
+    'ssl': ssl_context
 }
 
 # List of bot activities
@@ -60,9 +63,9 @@ async def change_activity():
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user}')
-    change_activity.start()
+    change_activity.start() # pyright: ignore[reportFunctionMemberAccess]
     await bot.tree.sync()
-    fetch_urls.start()
+    fetch_urls.start() # pyright: ignore[reportFunctionMemberAccess]
     print(f'Fetched malicious domains')
     print(f'Slash commands synchronized with Discord.')
     print(f'Bot started successfully')
@@ -100,7 +103,7 @@ def extract_domain(url):
     return domain.split('.')[-2] + '.' + domain.split('.')[-1]
 
 # Function to check if the URL is shortened
-def is_shortened_url(url):
+def is_shortened_url(url): # pyright: ignore[reportRedeclaration]
     domain = extract_domain(url)
     return domain in SHORTENERS
 
@@ -268,12 +271,12 @@ async def on_message(message):
     # Load necessary data
     signatures = load_signatures()
     authorized_user_ids = load_dmuser_permissions()
-    
+
     if not check_safe_domain(message):
         detected_url = check_reportedscam(message)
         if detected_url:
             print(f"REPORTED URL DETECTED: {detected_url}")
-            
+
             # Create and send the reported URL embed
             reportedembed = discord.Embed(
                 title="❌ Reported URL found! ❌",
@@ -281,9 +284,9 @@ async def on_message(message):
                 color=discord.Color.red()
             )
             reportedembed.add_field(
-            name="Reason",
-            value=f"This domain is listed in one of the block lists we use. This domain could be a phishing site, IP grabber, malware host or something else that is malicious.",
-            inline=False
+                name="Reason",
+                value="This domain is listed in one of the block lists we use. This domain could be a phishing site, IP grabber, malware host or something else that is malicious.",
+                inline=False
             )
             reportedembed.add_field(name="Detected URL", value=f"```{detected_url}```", inline=False)
             reportedembed.add_field(name="Info", value='Do not interact with the "Detected URL"', inline=True)
@@ -303,6 +306,7 @@ async def on_message(message):
                     value=f"[Click to view]({message_link})", 
                     inline=False
                 )
+                await message.channel.send(embed=reportedembed)  # <- You missed this line in guilds
             else:
                 dm_message_link = f"https://discord.com/channels/@me/{message.channel.id}/{message.id}"
                 reportedembed.add_field(
@@ -310,7 +314,6 @@ async def on_message(message):
                     value=f"[Click to view]({dm_message_link})", 
                     inline=False
                 )
-                
                 await message.channel.send(embed=reportedembed)
     
     # Next, check for scams based on message content signatures.
@@ -780,8 +783,8 @@ async def domaincheck(interaction: discord.Interaction, domain: str):
     ssl_labs_url = f"https://www.ssllabs.com/ssltest/analyze.html?d={domain}"
     easydmarc_url = f"https://easydmarc.com/tools/domain-scanner?domain={domain}"
 
-    prefix = rpki_data.get("prefix", "unknown")
-    asn = rpki_data.get("asn", "unknown")
+    prefix = rpki_data.get("prefix", "unknown") # pyright: ignore[reportPossiblyUnboundVariable]
+    asn = rpki_data.get("asn", "unknown") # pyright: ignore[reportPossiblyUnboundVariable]
 
     # Create the embed
     embed = discord.Embed(
@@ -802,7 +805,7 @@ async def domaincheck(interaction: discord.Interaction, domain: str):
     embed.add_field(
     name="RPKI Status",
     value=(
-        f"**RIPE:** `{rpki_data['ripe_status']}`\n"
+        f"**RIPE:** `{rpki_data['ripe_status']}`\n" # pyright: ignore[reportPossiblyUnboundVariable]
         f"[Raw API response](https://stat.ripe.net/data/rpki-validation/data.json?resource={asn}&prefix={prefix})\n"
         f"__*Why it matters:*__ If a route isn't protected by RPKI, attackers can hijack IP prefixes using BGP "
         f"manipulation — potentially rerouting, intercepting, or dropping traffic intended for that domain."
@@ -855,7 +858,7 @@ async def reporthelp(interaction: discord.Interaction):
 
 # /reportserver command
 @bot.tree.command(name="reportserver", description="Report a Discord server.")
-async def report_server(interaction: discord.Interaction, serverid: str, reason: str, invitelink: str = None, other: str = None):
+async def report_server(interaction: discord.Interaction, serverid: str, reason: str, invitelink: str = None, other: str = None): # pyright: ignore[reportArgumentType]
     connection = pymysql.connect(**db_config)
     with connection.cursor() as cursor:
         # Check if the server is already reported
@@ -879,7 +882,7 @@ async def report_server(interaction: discord.Interaction, serverid: str, reason:
 
 # /reportbot command
 @bot.tree.command(name="reportbot", description="Report a Discord bot.")
-async def report_bot(interaction: discord.Interaction, botid: str, reason: str, other: str = None):
+async def report_bot(interaction: discord.Interaction, botid: str, reason: str, other: str = None): # pyright: ignore[reportArgumentType]
     connection = pymysql.connect(**db_config)
     with connection.cursor() as cursor:
         # Check if the bot is already reported
