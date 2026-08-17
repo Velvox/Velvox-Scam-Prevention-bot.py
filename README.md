@@ -123,7 +123,7 @@ Velvox Scam Prevention Bot supports [Discord Slash Commands](https://discord.com
 
 - `/botinfo`: Gives information about the bot.
 - `/domaincheck`: Check an domain on multiple sources on its security practices.
-- `/messagedelete`: **(ADMIN ONLY)** Disables/enables the message deletion function on malicouis messages.
+- ~`/messagedelete`: **(ADMIN ONLY)** Disables/enables the message deletion function on malicouis messages.~ [DISABLED GLOBALY DUE TO ISSUES WITH MESSAGE DELETION... MAY BE REPAIED IN THE FUTURE]
 
 ### How to check if an server invite is malicious?
 
